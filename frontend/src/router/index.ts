@@ -14,6 +14,7 @@ const Emergency = () => import('@/views/emergency/index.vue')
 const Deicing = () => import('@/views/deicing/index.vue')
 const Occupy = () => import('@/views/occupy/index.vue')
 const Greening = () => import('@/views/greening/index.vue')
+const GreeningDetail = () => import('@/views/greening/detail.vue')
 const Safety2 = () => import('@/views/safety2/index.vue')
 const Geom = () => import('@/views/geom/index.vue')
 const Light = () => import('@/views/light/index.vue')
@@ -39,6 +40,7 @@ const router = createRouter({
     { path: '/deicing', name: 'deicing', component: Deicing },
     { path: '/occupy', name: 'occupy', component: Occupy },
     { path: '/greening', name: 'greening', component: Greening },
+    { path: '/greening/:id', name: 'greening-detail', component: GreeningDetail },
     { path: '/safety2', name: 'safety2', component: Safety2 },
     { path: '/geom', name: 'geom', component: Geom },
     { path: '/light', name: 'light', component: Light },

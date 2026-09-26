@@ -1,4 +1,4 @@
-"""绿化管护接口：维护绿化管护，覆盖安排管护、开始管护、登记补植等动作。"""
+"""绿化管护接口：维护绿化管护，覆盖安排管护、防治登记、登记补植、补植完成等动作。"""
 from __future__ import annotations
 
 from typing import Any
@@ -6,20 +6,20 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas import ActionResult, EntryPayload, PageResult
-from app.services.greening import GreeningService
+from app.services.greening import STATUS_ORDER, GreeningService
 
 router = APIRouter(prefix="/api/greening", tags=["绿化管护"])
 
 service = GreeningService()
 
-LIST_FIELDS = ["管护编号", "管护区域", "植被类型", "修剪频次", "浇水周期", "病虫害防治", "管护人员", "管护状态"]
-STATUSES = ["待管护", "管护中", "已完成", "待补植"]
+LIST_FIELDS = ["管护编号", "管护区域", "管护周期", "植被类型", "修剪频次", "浇水周期", "病虫害防治", "管护人员", "管护状态"]
+STATUSES = STATUS_ORDER
 
 
 @router.get("", response_model=PageResult[dict])
 def list_entries(
     keyword: str | None = Query(default=None, description="按管护编号检索"),
-    status: str | None = Query(default=None, description="待管护、管护中、已完成、待补植"),
+    status: str | None = Query(default=None, description="待管护、管护中、待补植、已管护"),
     page: int = 1,
     size: int = 20,
 ) -> PageResult[dict]:
@@ -28,6 +28,13 @@ def list_entries(
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
     items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
     return PageResult(items=items, total=total, page=page, size=size)
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出绿化管护清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "greening", "total": total, "items": items}
 
 
 @router.get("/{entry_id}", response_model=dict)
@@ -41,25 +48,29 @@ def get_entry(entry_id: int) -> dict:
 
 @router.post("", response_model=ActionResult)
 def create_entry(payload: EntryPayload) -> ActionResult:
-    """登记一条绿化管护，缺字段时说明原因而不是静默丢弃。"""
-    entry, missing = service.create_entry(payload.values)
+    """登记一条绿化管护；同一管护区域同期重复提交只生效一次，返回已有记录。"""
+    entry, missing, created = service.create_entry(payload.values)
     if missing:
         return ActionResult(ok=False, message=f"缺少必填字段：{'、'.join(missing)}")
-    return ActionResult(ok=True, message="绿化管护已登记", entry=entry)
+    assert entry is not None
+    if not created:
+        return ActionResult(
+            ok=True,
+            message=(
+                f"管护区域「{entry.get('管护区域')}」在 {entry.get('管护周期')} 已存在记录"
+                f"（{entry.get('管护编号')}），本次提交未重复建档"
+            ),
+            entry=entry,
+        )
+    return ActionResult(ok=True, message=f"绿化管护已登记，管护编号 {entry.get('管护编号')}", entry=entry)
 
 
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条绿化管护执行安排管护、开始管护、登记补植；不允许的动作会被拦下并说明原因。"""
+    """对单条绿化管护执行安排管护、防治登记、登记补植、补植完成；已结束的记录只读。"""
     action = str(payload.values.get("action") or "").strip()
-    entry, message = service.run_action(entry_id, action)
+    note = str(payload.values.get("防治说明") or payload.values.get("病虫害防治") or "").strip()
+    entry, message = service.run_action(entry_id, action, note)
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出绿化管护清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "greening", "total": total, "items": items}
